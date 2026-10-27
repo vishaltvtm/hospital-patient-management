@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+
+import PatientForm from "@/components/dashboardComp/PatientForm";
+import PatientsTable from "@/components/dashboardComp/PatientsTable";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -15,8 +17,11 @@ const emptyForm = {
 };
 
 export default function Dashboard() {
-    const router = useRouter();
-    const [patients, setPatients] = useState([]);
+
+    const [activeTab, setActiveTab] = useState("today");
+    const [TodaysPatients, setTodaysPatients] = useState([]);
+    const [TomorrowPatients, setTomorrowPatients] = useState([]);
+    const [AllPatients, setAllPatients] = useState([]);
     const [form, setForm] = useState(emptyForm);
     const [editingId, setEditingId] = useState(null);
     const [error, setError] = useState("");
@@ -31,7 +36,52 @@ export default function Dashboard() {
         };
     }
 
-    async function fetchPatients() {
+    async function fetchTodaysPatients() {
+        try {
+            const res = await fetch(`${API}/patients/todays`, {
+                headers: getHeaders(),
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                localStorage.removeItem("token");
+                router.replace("/");
+                return;
+            }
+
+            if (!res.ok) throw new Error("Failed to load patients");
+
+            const data = await res.json();
+            setTodaysPatients(data);
+        } catch (err) {
+            setError(err.message || "Could not connect to server");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function fetchTomorrowPatients() {
+        try {
+            const res = await fetch(`${API}/patients/tomorrow`, {
+                headers: getHeaders(),
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                localStorage.removeItem("token");
+                router.replace("/");
+                return;
+            }
+
+            if (!res.ok) throw new Error("Failed to load patients");
+
+            const data = await res.json();
+            setTomorrowPatients(data);
+        } catch (err) {
+            setError(err.message || "Could not connect to server");
+        } finally {
+            setLoading(false);
+        }
+    }
+    async function fetchAllPatients() {
         try {
             const res = await fetch(`${API}/patients`, {
                 headers: getHeaders(),
@@ -46,7 +96,7 @@ export default function Dashboard() {
             if (!res.ok) throw new Error("Failed to load patients");
 
             const data = await res.json();
-            setPatients(data);
+            setAllPatients(data);
         } catch (err) {
             setError(err.message || "Could not connect to server");
         } finally {
@@ -60,7 +110,9 @@ export default function Dashboard() {
             return;
         }
 
-        fetchPatients();
+        fetchTodaysPatients();
+        fetchTomorrowPatients();
+        fetchAllPatients();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -71,6 +123,7 @@ export default function Dashboard() {
     async function handleSubmit(e) {
         e.preventDefault();
         setError("");
+        console.log(form)
 
         try {
             const url = editingId
@@ -94,7 +147,9 @@ export default function Dashboard() {
 
             setForm(emptyForm);
             setEditingId(null);
-            await fetchPatients();
+            await fetchTodaysPatients();
+            await fetchTomorrowPatients();
+            await fetchAllPatients();
         } catch (err) {
             setError(err.message || "Unable to save patient");
         }
@@ -130,29 +185,39 @@ export default function Dashboard() {
         }
     }
     async function updateStatus(id, Status) {
-  try {
-    const res = await fetch(`${API}/patients/${id}`, {
-      method: "PUT",
-      headers: getHeaders(),
-      body: JSON.stringify({ Status }),
-    });
+        try {
+            const res = await fetch(`${API}/patients/${id}`, {
+                method: "PUT",
+                headers: getHeaders(),
+                body: JSON.stringify({ Status }),
+            });
 
-    const data = await res.json();
+            const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.message || "Failed to update status");
+            if (!res.ok) {
+                throw new Error(data.message || "Failed to update status");
+            }
+            alert("Status is Updated")
+            // Update the patient in the frontend immediately
+            setAllPatients((prev) =>
+                prev.map((patient) =>
+                    patient._id === id ? { ...patient, ...data } : patient
+                )
+            );
+            setTodaysPatients((prev) =>
+                prev.map((patient) =>
+                    patient._id === id ? { ...patient, ...data } : patient
+                )
+            );
+            setTomorrowPatients((prev) =>
+                prev.map((patient) =>
+                    patient._id === id ? { ...patient, ...data } : patient
+                )
+            );
+        } catch (err) {
+            setError(err.message || "Failed to update status");
+        }
     }
-
-    // Update the patient in the frontend immediately
-    setPatients((prev) =>
-      prev.map((patient) =>
-        patient._id === id ? { ...patient, ...data } : patient
-      )
-    );
-  } catch (err) {
-    setError(err.message || "Failed to update status");
-  }
-}
 
     async function handleDelete(id) {
         if (!window.confirm("Are you sure you want to delete this patient?")) {
@@ -173,7 +238,9 @@ export default function Dashboard() {
                 throw new Error(data.message || "Unable to delete patient");
             }
 
-            await fetchPatients();
+            await fetchTodaysPatients();
+            await fetchTomorrowPatients();
+            await fetchAllPatients();
         } catch (err) {
             setError(err.message || "Unable to delete patient");
         }
@@ -199,199 +266,119 @@ export default function Dashboard() {
                 </button>
             </header>
 
-            <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-8">
+            <div className="mx-auto max-w-7xl space-y-6 p-2 md:p-2">
                 <section className="rounded-xl bg-white p-6 shadow-sm">
                     <h2 className="mb-5 text-xl font-semibold">
                         {editingId ? "Update Patient" : "Add New Patient"}
                     </h2>
-
-                    <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-3">
-                        <input
-                            name="name"
-                            placeholder="Patient name"
-                            value={form.name}
-                            onChange={handleChange}
-                            className="rounded-lg border p-3"
-                            required
-                        />
-
-                        <input
-                            name="age"
-                            type="number"
-                            min="0"
-                            placeholder="Age"
-                            value={form.age}
-                            onChange={handleChange}
-                            className="rounded-lg border p-3"
-                            required
-                        />
-
-                        <input
-                            name="contact"
-                            placeholder="Contact number"
-                            value={form.contact}
-                            onChange={handleChange}
-                            className="rounded-lg border p-3"
-                            required
-                        />
-
-                        <input
-                            name="Department"
-                            placeholder="Department"
-                            value={form.Department}
-                            onChange={handleChange}
-                            className="rounded-lg border p-3"
-                            required
-                        />
-
-                        <input
-                            name="Date"
-                            type="date"
-                            value={form.Date}
-                            onChange={handleChange}
-                            className="rounded-lg border p-3"
-                            required
-                        />
-
-                        <select
-                            name="time_slot"
-                            value={form.time_slot}
-                            onChange={handleChange}
-                            className="rounded-lg border p-3"
-                            required
-                        >
-                            <option value="">Select Time Slot</option>
-
-                            <optgroup label="Morning">
-                                <option value="11:00 AM - 11:30 AM">11:00 AM - 11:30 AM</option>
-                                <option value="11:30 AM - 12:00 PM">11:30 AM - 12:00 PM</option>
-                                <option value="12:00 PM - 12:30 PM">12:00 PM - 12:30 PM</option>
-                                <option value="12:30 PM - 01:00 PM">12:30 PM - 01:00 PM</option>
-                                <option value="01:00 PM - 01:30 PM">01:00 PM - 01:30 PM</option>
-                                <option value="01:30 PM - 02:00 PM">01:30 PM - 02:00 PM</option>
-                            </optgroup>
-
-                            <optgroup label="Evening">
-                                <option value="05:00 PM - 05:30 PM">05:00 PM - 05:30 PM</option>
-                                <option value="05:30 PM - 06:00 PM">05:30 PM - 06:00 PM</option>
-                                <option value="06:00 PM - 06:30 PM">06:00 PM - 06:30 PM</option>
-                                <option value="06:30 PM - 07:00 PM">06:30 PM - 07:00 PM</option>
-                                <option value="07:00 PM - 07:30 PM">07:00 PM - 07:30 PM</option>
-                                <option value="07:30 PM - 08:00 PM">07:30 PM - 08:00 PM</option>
-                            </optgroup>
-                        </select>
-
-                        <div className="flex gap-3 md:col-span-3">
-                            <button className="rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700">
-                                {editingId ? "Update Patient" : "Add Patient"}
-                            </button>
-
-                            {editingId && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setForm(emptyForm);
-                                        setEditingId(null);
-                                    }}
-                                    className="rounded-lg border px-6 py-3"
-                                >
-                                    Cancel
-                                </button>
-                            )}
-                        </div>
-                    </form>
-                </section>
-
-                <section className="rounded-xl bg-white p-6 shadow-sm">
-                    <div className="mb-5 flex items-center justify-between">
-                        <h2 className="text-xl font-semibold">Patients</h2>
-                        <span className="rounded-full bg-blue-100 px-3 py-1 text-sm text-blue-700">
-                            Total: {patients.length}
-                        </span>
-                    </div>
-
+                    <><PatientForm form={form} handleChange={handleChange} handleSubmit={handleSubmit} editingId={editingId} /></>
+                    {/* Error */}
                     {error && (
-                        <p className="mb-4 rounded-lg bg-red-50 p-3 text-red-600">
+                        <p className="mb-4 mt-4 rounded-lg bg-red-50 p-3 text-red-600">
                             {error}
                         </p>
                     )}
+                </section>
 
+
+                <section className="rounded-xl bg-white p-6 shadow-sm">
+                    {/* Tabs */}
+                    <div className="mb-6 flex flex-wrap gap-3">
+                        <button
+                            onClick={() => setActiveTab("today")}
+                            className={`rounded-lg px-4 py-2 font-medium transition ${activeTab === "today"
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                }`}
+                        >
+                            Today Patients ({TodaysPatients.length})
+                        </button>
+
+                        <button
+                            onClick={() => setActiveTab("tomorrow")}
+                            className={`rounded-lg px-4 py-2 font-medium transition ${activeTab === "tomorrow"
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                }`}
+                        >
+                            Tomorrow Patients ({TomorrowPatients.length})
+                        </button>
+
+                        <button
+                            onClick={() => setActiveTab("all")}
+                            className={`rounded-lg px-4 py-2 font-medium transition ${activeTab === "all"
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                }`}
+                        >
+                            All Patients ({AllPatients.length})
+                        </button>
+                    </div>
+
+                    {/* Heading */}
+                    <h2 className="mb-5 text-xl font-semibold">
+                        {activeTab === "today"
+                            ? "Today's Patients"
+                            : activeTab === "tomorrow"
+                                ? "Tomorrow's Patients"
+                                : "All Patients"}
+                    </h2>
+
+
+
+                    {/* Patient table */}
                     {loading ? (
                         <p className="text-gray-500">Loading patients...</p>
-                    ) : patients.length === 0 ? (
-                        <p className="text-gray-500">No patients found. Add your first patient.</p>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full min-w-[800px] text-left text-sm">
-                                <thead className="bg-gray-50 text-gray-600">
-                                    <tr>
-                                        <th className="p-3">Name</th>
-                                        <th className="p-3">Age</th>
-                                        <th className="p-3">Contact</th>
-                                        <th className="p-3">Department</th>
-                                        <th className="p-3">Date</th>
-                                        <th className="p-3">Time</th>
-                                        <th className="p-3">Actions</th>
-                                        <th className="p-3">Status</th>
-                                    </tr>
-                                </thead>
+                        <>
+                            {activeTab === "today" && (
+                                TodaysPatients.length === 0 ? (
+                                    <p className="text-gray-500">
+                                        No patients scheduled for today.
+                                    </p>
+                                ) : (
+                                    <PatientsTable
+                                        patients={TodaysPatients}
+                                        handleEdit={handleEdit}
+                                        handleDelete={handleDelete}
+                                        updateStatus={updateStatus}
+                                    />
+                                )
+                            )}
 
-                                <tbody>
-                                    {patients.map((patient) => (
-                                        <tr key={patient._id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3">{patient.name}</td>
-                                            <td className="p-3">{patient.age}</td>
-                                            <td className="p-3">{patient.contact}</td>
-                                            <td className="p-3">{patient.Department}</td>
-                                            <td className="p-3">
-                                                {patient.Date
-                                                    ? new Date(patient.Date).toLocaleDateString()
-                                                    : ""}
-                                            </td>
-                                            <td className="p-3">{patient.time_slot}</td>
-                                            <td className="p-3">
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => handleEdit(patient._id)}
-                                                        className="rounded bg-amber-100 px-3 py-1 text-amber-800"
-                                                    >
-                                                        Edit
-                                                    </button>
+                            {activeTab === "tomorrow" && (
+                                TomorrowPatients.length === 0 ? (
+                                    <p className="text-gray-500">
+                                        No patients scheduled for tomorrow.
+                                    </p>
+                                ) : (
+                                    <PatientsTable
+                                        patients={TomorrowPatients}
+                                        handleEdit={handleEdit}
+                                        handleDelete={handleDelete}
+                                        updateStatus={updateStatus}
+                                    />
+                                )
+                            )}
 
-                                                    <button
-                                                        onClick={() => handleDelete(patient._id)}
-                                                        className="rounded bg-red-100 px-3 py-1 text-red-700"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </div>
-                                            </td>
-                                            <td className="p-3">
-                                                <select
-                                                    value={patient.Status || "Pending"}
-                                                    onChange={(e) => updateStatus(patient._id, e.target.value)}
-                                                    className={`rounded-lg border p-2 text-sm ${patient.Status === "Completed"
-                                                            ? "bg-green-100 text-green-700"
-                                                            : patient.Status === "Cancelled"
-                                                                ? "bg-red-100 text-red-700"
-                                                                : patient.Status === "Not Attended"
-                                                                    ? "bg-gray-200 text-gray-700"
-                                                                    : "bg-yellow-100 text-yellow-700"
-                                                        }`}
-                                                >
-                                                    <option value="Pending">Pending</option>
-                                                    <option value="Completed">Completed</option>
-                                                    <option value="Not Attended">Not Attended</option>
-                                                    <option value="Cancelled">Cancelled</option>
-                                                </select>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                            {activeTab === "all" && (
+                                AllPatients.length === 0 ? (
+                                    <p className="text-gray-500">
+                                        No patients found.
+                                    </p>
+                                ) : (
+                                    <PatientsTable
+                                        patients={AllPatients}
+                                        handleEdit={handleEdit}
+                                        handleDelete={handleDelete}
+                                        updateStatus={updateStatus}
+                                    />
+                                )
+                            )}
+                        </>
                     )}
                 </section>
+
             </div>
         </main>
     );
