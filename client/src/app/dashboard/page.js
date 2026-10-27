@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import PatientForm from "@/components/dashboardComp/PatientForm";
 import PatientsTable from "@/components/dashboardComp/PatientsTable";
+import { useRouter } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -17,7 +18,7 @@ const emptyForm = {
 };
 
 export default function Dashboard() {
-
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState("today");
     const [TodaysPatients, setTodaysPatients] = useState([]);
     const [TomorrowPatients, setTomorrowPatients] = useState([]);
@@ -26,6 +27,10 @@ export default function Dashboard() {
     const [editingId, setEditingId] = useState(null);
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
+
+    const [saving, setSaving] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
+    const [updatingStatusId, setUpdatingStatusId] = useState(null);
 
     function getHeaders() {
         const token = localStorage.getItem("token");
@@ -103,16 +108,27 @@ export default function Dashboard() {
             setLoading(false);
         }
     }
-
     useEffect(() => {
         if (!localStorage.getItem("token")) {
             router.replace("/");
             return;
         }
 
-        fetchTodaysPatients();
-        fetchTomorrowPatients();
-        fetchAllPatients();
+        async function loadPatients() {
+            setLoading(true);
+
+            try {
+                await Promise.all([
+                    fetchTodaysPatients(),
+                    fetchTomorrowPatients(),
+                    fetchAllPatients(),
+                ]);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        loadPatients();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -122,8 +138,11 @@ export default function Dashboard() {
 
     async function handleSubmit(e) {
         e.preventDefault();
+
+        if (saving) return;
+
         setError("");
-        console.log(form)
+        setSaving(true);
 
         try {
             const url = editingId
@@ -147,11 +166,16 @@ export default function Dashboard() {
 
             setForm(emptyForm);
             setEditingId(null);
-            await fetchTodaysPatients();
-            await fetchTomorrowPatients();
-            await fetchAllPatients();
+
+            await Promise.all([
+                fetchTodaysPatients(),
+                fetchTomorrowPatients(),
+                fetchAllPatients(),
+            ]);
         } catch (err) {
             setError(err.message || "Unable to save patient");
+        } finally {
+            setSaving(false);
         }
     }
 
@@ -271,7 +295,17 @@ export default function Dashboard() {
                     <h2 className="mb-5 text-xl font-semibold">
                         {editingId ? "Update Patient" : "Add New Patient"}
                     </h2>
-                    <><PatientForm form={form} handleChange={handleChange} handleSubmit={handleSubmit} editingId={editingId} /></>
+                    <>
+                        <PatientForm
+                            form={form}
+                            handleChange={handleChange}
+                            handleSubmit={handleSubmit}
+                            editingId={editingId}
+                            saving={saving}
+                            setForm={setForm}
+                            setEditingId={setEditingId}
+                        />
+                    </>
                     {/* Error */}
                     {error && (
                         <p className="mb-4 mt-4 rounded-lg bg-red-50 p-3 text-red-600">
@@ -328,7 +362,10 @@ export default function Dashboard() {
 
                     {/* Patient table */}
                     {loading ? (
-                        <p className="text-gray-500">Loading patients...</p>
+                        <div className="flex items-center justify-center gap-3 py-12">
+                            <div className="h-6 w-6 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                            <p className="text-gray-500">Loading patients...</p>
+                        </div>
                     ) : (
                         <>
                             {activeTab === "today" && (
